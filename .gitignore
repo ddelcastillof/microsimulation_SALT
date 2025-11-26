@@ -1,0 +1,26 @@
+# Basic files
+## RStudio files
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+## DS_Store
+.DS_Store
+
+# All the content from the data folder
+## Maybe we can create synthetic data for testing in the future
+data/
+
+# PDF output until it is finished
+report/*
+
+# All output until it is finished
+output/*
+
+# Quarto files
+/.quarto/
+
+# VS Code files
+.vscode/

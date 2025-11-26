@@ -1,0 +1,28 @@
+---
+title: "Cost-effectiveness analysis of a salt substitute intervention in Northern Peru"
+author: "Darwin Del Castillo"
+date: today
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Main results
+
+## Table 1. Base-case parameters
+
+## Table 2. Outcomes and definitions
+
+## Figure 1. Markov model structure
+
+## Figure 2. Cost-effectiveness plane
+
+## Figure 3. Cost-effectiveness acceptability curve
+
+# Sensitivity analyses
