@@ -14,13 +14,18 @@
 data/
 
 # PDF output until it is finished
-report/*
+report/
 
 # All output until it is finished
-output/*
+output/
+
+# Formatting files
+assets/
 
 # Quarto files
 /.quarto/
+/_site/
+*_files/
 
 # VS Code files
 .vscode/
