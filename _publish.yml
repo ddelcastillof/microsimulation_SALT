@@ -1,0 +1,4 @@
+- source: salt_results.qmd
+  quarto-pub:
+    - id: # hash of the file
+      url: # url to the published file
