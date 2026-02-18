@@ -22,6 +22,9 @@ output/
 # Formatting files
 assets/
 
+# Figures
+figs/
+
 # Quarto files
 /.quarto/
 /_site/
