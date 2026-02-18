@@ -44,7 +44,7 @@ import_data <- function(format = c("wide", "long")) {
 
 clean_long <- function() {
   require(tidyverse)
-  data_interim <- import_data("long") |>
+  data_clean <- import_data("long") |>
     select(entvilla,
       codigo,
       codigogen,
@@ -89,7 +89,7 @@ clean_long <- function() {
       xassets,
       niveduca,
       eqindex,
-      disapev1,
+      disaprev1,
       disaprev2,
       disaprev3,
     ) |>
@@ -100,6 +100,18 @@ clean_long <- function() {
              niveduca,
              Superior = c("Superior NO universitaria",
                           "Superior universitaria")
-           ))
-  return(data_interim)
+           )) |>
+    # assigning wave numbers, filling missing from 0:6
+    # wave will represent visit number, with 0 being baseline
+    group_by(codigo) |>
+    mutate(
+      wave = as.integer(time) - 1L,
+      wave = {
+        missing_waves <- setdiff(0:6, wave[!is.na(wave)])
+        wave[is.na(wave)] <- sort(missing_waves)
+        wave
+      }
+    ) |>
+    ungroup()
+  return(data_clean)
 }
