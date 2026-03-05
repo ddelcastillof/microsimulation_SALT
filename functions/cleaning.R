@@ -41,77 +41,142 @@ import_data <- function(format = c("wide", "long")) {
   read_fst(fst_path) |> as.data.table()
 }
 
-
 clean_long <- function() {
-  require(tidyverse)
-  data_clean <- import_data("long") |>
-    select(entvilla,
-      codigo,
-      codigogen,
-      codigovilla,
-      codigovivienda,
-      codigofam,
-      codigopersona,
-      fecha,
-      time,
-      intervencion,
-      sexo,
-      fec_nac,
-      edad1,
-      ecivil,
-      ecivil1,
-      dbdx,
-      db2,
-      bmi,
-      phq,
-      phq1,
-      phq2,
-      sbp,
-      dbp,
-      preht,
-      hts,
-      htd,
-      htdx,
-      htdxtx,
-      ht5,
-      derrame,
-      infarto,
-      insuficiencia,
-      otracor,
-      colesterol,
-      smoking1,
-      smoking2,
-      pvivo,
-      dni,
-      f_muerte,
-      c_muerte,
-      assets,
-      xassets,
-      niveduca,
-      eqindex,
-      disaprev1,
-      disaprev2,
-      disaprev3,
-    ) |>
-    # transforming date variables into date format
-    mutate(across(c(fecha, fec_nac), dmy),
-    # collapsing superior education categories
-           niveduca2 = fct_collapse(
-             niveduca,
-             Superior = c("Superior NO universitaria",
-                          "Superior universitaria")
-           )) |>
-    # assigning wave numbers, filling missing from 0:6
-    # wave will represent visit number, with 0 being baseline
-    group_by(codigo) |>
-    mutate(
-      wave = as.integer(time) - 1L,
-      wave = {
-        missing_waves <- setdiff(0:6, wave[!is.na(wave)])
-        wave[is.na(wave)] <- sort(missing_waves)
-        wave
-      }
-    ) |>
-    ungroup()
-  return(data_clean)
+  require(data.table)
+  require(lubridate)
+  require(forcats)
+  tidied_data <- import_data("long")
+  
+  cols_to_select <- c(
+      "entvilla",
+      "codigo",
+      "codigogen",
+      "codigovilla",
+      "codigovivienda",
+      "codigofam",
+      "codigopersona",
+      "fecha",
+      "time",
+      "intervencion",
+      "sexo",
+      "fec_nac",
+      "edad1",
+      "ecivil",
+      "ecivil1",
+      "dbdx",
+      "db2",
+      "bmi",
+      "phq",
+      "phq1",
+      "phq2",
+      "sbp",
+      "dbp",
+      "preht",
+      "hts",
+      "htd",
+      "htdx",
+      "htdxtx",
+      "ht5",
+      "derrame",
+      "infarto",
+      "insuficiencia",
+      "otracor",
+      "colesterol",
+      "smoking1",
+      "smoking2",
+      "pvivo",
+      "dni",
+      "f_muerte",
+      "c_muerte",
+      "assets",
+      "xassets",
+      "niveduca",
+      "eqindex",
+      "disaprev1",
+      "disaprev2",
+      "disaprev3"
+    )
+  
+  tidied_data <- tidied_data[, ..cols_to_select]
+  # transforming date variables into date format
+  tidied_data[, c("fecha", "fec_nac") := lapply(.SD, dmy),                                                                                                                                                                                                                
+              .SDcols = c("fecha", "fec_nac")]
+  # collapsing superior education categories
+  tidied_data[, niveduca2 := fct_collapse(
+    niveduca,
+    Superior = c("Superior NO universitaria", "Superior universitaria")
+  )]
+  # assigning wave numbers, filling missing from 0:6
+  # wave will represent visit number, with 0 being baseline
+  tidied_data[, wave := as.integer(time) - 1L]
+  tidied_data[, wave := {
+    missing_waves <- setdiff(0:6, wave[!is.na(wave)])
+    wave[is.na(wave)] <- sort(missing_waves)
+    wave
+  }, by = codigo]
+  return(tidied_data)
+}
+
+clean_wide <- function() { #in development, check dictionary
+  require(data.table)
+  require(lubridate)
+  require(forcats)
+
+  cols_to_select <- c(
+    "entvilla", 
+    "codigo", 
+    "codigogen", 
+    "codigovilla",
+    "codigovivienda", 
+    "codigofam", 
+    "codigopersona",
+    "fecha", 
+    "time", 
+    "intervencion", 
+    "sexo", 
+    "fec_nac",
+    "edad1", 
+    "ecivil", 
+    "ecivil1", 
+    "dbdx", 
+    "db2", 
+    "bmi",
+    "phq", 
+    "phq1", 
+    "phq2", 
+    "sbp", 
+    "dbp", 
+    "preht",
+    "hts", 
+    "htd", 
+    "htdx", 
+    "htdxtx", 
+    "ht5", 
+    "derrame",
+    "infarto", 
+    "insuficiencia", 
+    "otracor", 
+    "colesterol",
+    "smoking1", 
+    "smoking2", 
+    "pvivo", 
+    "dni", 
+    "f_muerte",
+    "c_muerte", 
+    "assets", 
+    "xassets", 
+    "niveduca"
+  )
+
+  tidied_data <- import_data("wide")
+  tidied_data <- tidied_data[, ..cols_to_select]
+  # transforming date variables into date format
+  tidied_data[, c("fecha", "fec_nac") := lapply(.SD, dmy),
+              .SDcols = c("fecha", "fec_nac")]
+  # collapsing superior education categories
+  tidied_data[, niveduca2 := fct_collapse(
+    niveduca,
+    Superior = c("Superior NO universitaria", "Superior universitaria")
+  )]
+  return(tidied_data)
 }
