@@ -50,3 +50,49 @@ model_diagram |>
   DiagrammeRsvg::export_svg() |>
   read_xml() |>
   write_xml(here::here("figs", "model_structure.svg"))
+
+
+# Create DAG for causal assumptions
+dag <- grViz("
+              digraph{
+                  graph[ranksep=0.2]
+                    
+                  node[shape=plaintext, fontname = 'Arial']
+                    
+                  # Define nodes
+                  Interv [label='Salt', shape=box]
+                  HTA [label='High BP', shape=oval]
+                  CVD [label='CVD', shape=oval]
+                  Age [label='Age', shape=oval]
+                  SES [label='SES', shape=oval]
+                  Fam [label='Fam. hist.', shape=oval]
+                  Educ [label='Educ. lvl', shape=oval]
+
+                  edge[minlen=2]
+                  # Define transitions
+                  Interv -> HTA
+                  Interv -> CVD
+                  
+                  Age -> HTA, CVD
+                  
+                  SES -> HTA, CVD
+
+                  Fam -> HTA, CVD
+
+                  Educ -> HTA, CVD, SES
+
+                  HTA -> CVD
+
+                  # Rank the nodes
+                  {rank=min; Interv, HTA, CVD}
+                  {rank=max; Age, SES, Fam, Educ}
+              }     
+              "
+)
+
+print(dag)
+
+dag |>
+  DiagrammeRsvg::export_svg() |>
+  read_xml() |>
+  write_xml(here::here("figs", "causal_dag.svg"))
