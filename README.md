@@ -34,7 +34,7 @@ gantt
 
     section Report
     Manuscript writing               :        rep1, 01-06-2026, 31-07-2026
-    Submit to conference (WCC 2026)  :        rep2, 01-06-2026, 30-06-2026
+    Submit abstract (WCC 2026)  :             rep2, 01-06-2026, 30-06-2026
     Internal review                  :        rep3, 01-08-2026, 31-08-2026
     Journal submission               :milestone, 01-09-2026, 1d
 ```
