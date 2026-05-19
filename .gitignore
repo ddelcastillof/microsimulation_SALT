@@ -36,3 +36,6 @@ figs/
 # Claude memory
 .claude/
 CLAUDE.md
+
+# docs folder
+docs/
