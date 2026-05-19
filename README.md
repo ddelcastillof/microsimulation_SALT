@@ -4,8 +4,6 @@
 
 This repo contains the code for the paper mentioned above. The data belongs to the CRONICAS Centre of Excellence in Chronic Diseases at the Universidad Peruana Cayetano Heredia (and the study participants) and is available upon reasonable request to its owners.
 
-More content on this repo will be available soon.
-
 ## Project Timeline
 
 ```mermaid
@@ -38,3 +36,7 @@ gantt
     Internal review                  :        rep3, 01-08-2026, 31-08-2026
     Journal submission               :milestone, 01-09-2026, 1d
 ```
+
+## Packages
+- globorisk
+- data.table
