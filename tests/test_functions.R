@@ -4,15 +4,18 @@
 
 pacman::p_load(testthat)
 
-source(here::here("functions", "cleaning.R"))
-source(here::here("functions", "dictionary.R"))
+source(here::here("functs", "cleaning.R"))
+source(here::here("functs", "dictionary.R"))
 
 print("Running tests for cleaning and dictionary functions...")
 
 # Dictionary functions
 print("Testing dictionary functions")
-test_that("dictionary functions load without error", {
-  expect_error(create_dictionary(), NA)
+test_that("dictionary functions produce a readable YAML file", {
+  path <- create_dictionary()
+  expect_true(file.exists(path))
+  dict <- yaml::read_yaml(path)
+  expect_true(all(c("long", "wide") %in% names(dict)))
 })
 
 # Cleaning functions
