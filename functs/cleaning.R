@@ -2,7 +2,9 @@
 # Cleaning functions
 #-------------------
 
-print("Loading cleaning functions")
+print("Loading cleaning functions...")
+
+# Function 1: Importing dataset in both long and wide format
 
 import_data <- function(format = c("wide", "long")) {
   require(tidyverse)
@@ -40,6 +42,8 @@ import_data <- function(format = c("wide", "long")) {
 
   read_fst(fst_path) |> as.data.table()
 }
+
+# Function 2: Cleaning data in long format, including assigning wave numbers and filling in missing waves 
 
 clean_long <- function() {
   require(data.table)
@@ -99,8 +103,11 @@ clean_long <- function() {
   
   tidied_data <- tidied_data[, ..cols_to_select]
   # transforming date variables into date format
-  tidied_data[, c("fecha", "fec_nac") := lapply(.SD, dmy),                                                                                                                                                                                                                
+  tidied_data[, c("fecha", "fec_nac") := lapply(.SD, dmy),
               .SDcols = c("fecha", "fec_nac")]
+  # f_muerte is stored as character in Stata; empty string encodes missing
+  tidied_data[f_muerte == "", f_muerte := NA_character_]
+  tidied_data[, f_muerte := dmy(f_muerte)]
   # collapsing superior education categories
   tidied_data[, niveduca2 := fct_collapse(
     niveduca,
@@ -116,6 +123,25 @@ clean_long <- function() {
   }, by = codigo]
   return(tidied_data)
 }
+
+# Function 2.1. Helper function to preprocessing additional variables
+
+prep_long <- function(data) {
+  # ensuring age is an integer variable
+  data[, age := as.integer(edad1)]
+
+  # creating a variable for pool_cvd risk factor count (0-5, counting ht5, insuficiencia, infarto, derrame, otracor)
+  # factor columns coded as No/Si (or No/Yes) -> 0/1 via as.integer() - 1L before summing
+  pool_cols <- c("ht5", "insuficiencia", "infarto", "derrame", "otracor")
+  data[, pool_cvd := rowSums(
+    sapply(.SD, function(x) {
+      if (is.factor(x)) as.integer(x) - 1L else as.integer(x)
+    }),
+    na.rm = TRUE
+  ), .SDcols = pool_cols]
+}
+
+# Function 3: Cleaning data in wide format, including assigning wave numbers and filling in missing waves 
 
 clean_wide <- function() { #in development, check dictionary
   require(data.table)
@@ -173,6 +199,9 @@ clean_wide <- function() { #in development, check dictionary
   # transforming date variables into date format
   tidied_data[, c("fecha", "fec_nac") := lapply(.SD, dmy),
               .SDcols = c("fecha", "fec_nac")]
+  # f_muerte is stored as character in Stata; empty string encodes missing
+  tidied_data[f_muerte == "", f_muerte := NA_character_]
+  tidied_data[, f_muerte := dmy(f_muerte)]
   # collapsing superior education categories
   tidied_data[, niveduca2 := fct_collapse(
     niveduca,
