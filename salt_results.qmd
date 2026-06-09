@@ -9,20 +9,59 @@ output:
     toc: yes
     toc_depth: 3
     toc_float: yes
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
+
+```{r setup, include=FALSE}
+here::i_am("salt_results.qmd")
+source(here::here("functs", "cea.R"))
+results <- readRDS(here::here("output", "cea_results.rds"))
+```
 
 # Main results
 
 ## Table 1. Base-case parameters
 
+```{r tab1}
+#| echo: false
+#| include: true
+#| message: false
+
+p <- results$params
+knitr::kable(data.frame(
+  Parameter = c("Cycles", "Cycle length (yr)", "Discount rate",
+                "Treatment effect on SBP (mmHg)"),
+  Value     = c(as.character(as.integer(p$n_t)),
+                format(round(p$cycle_length, 3), nsmall = 3),
+                paste0(p$d_c * 100, "%"), paste0(p$delta_sbp, " mmHg"))
+))
+```
+
 ## Table 2. Outcomes and definitions
+
+```{r tab2}
+#| echo: false
+#| include: true
+#| message: false
+knitr::kable(results$cea$summary, digits = 3)
+```
 
 ## Figure 1. Markov model structure
 
+![Model structure](figs/model_structure.svg)
+
 ## Figure 2. Cost-effectiveness plane
 
+```{r fig2}
+#| echo: false
+#| include: true
+#| message: false
+ce_plane(results$cea)
+```
+
 ## Figure 3. Cost-effectiveness acceptability curve
+
+*Pending probabilistic sensitivity analysis (later deliverable).*
 
 # Sensitivity analyses
