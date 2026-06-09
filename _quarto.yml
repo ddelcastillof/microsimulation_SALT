@@ -1,7 +1,3 @@
 project:
   title: "CE Analysis Report"
   output-dir: reports
-format: 
-  docx:
-    number-sections: true
-    reference-doc: assets/reference.docx
