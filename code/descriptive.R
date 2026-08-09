@@ -6,8 +6,8 @@
 here::i_am("salt_results.qmd")
 
 # Load cleaning functions
-source(here::here("functs", "cleaning.R"))
-source(here::here("functs", "helpers.R"))
+source(here::here("R", "cleaning.R"))
+source(here::here("R", "helpers.R"))
 
 # Importing data for descriptive statistics
 print("Importing data for descriptive statistics")
@@ -99,13 +99,8 @@ print(date_seq)
 die_between_0_1 <- c("012-086-01", "107-091-01", "020-153-02", "018-034-01")
 die_between_1_2 <- c("012-035-01", "012-038-03")
 
-# 020-153-02 died between 1 and 2 but has information in wave 2 and 3 — changing f_muerte from wave 1 to NA
-data_prelim <- data_prelim[, f_muerte := fifelse(codigo == "020-153-02" & wave == 1, NA, f_muerte)]
-# also changing pvivo from "No" to NA in wave 3 for 020-153-02
-data_prelim <- data_prelim[, pvivo := fifelse(codigo == "020-153-02" & wave == 3, NA, pvivo)]
-# also changing all other variables to NA in wave 3 for 020-153-02, since they are likely unreliable after death
-data_prelim[codigo == "020-153-02" & wave == 3,
-            (setdiff(names(data_prelim), id_cols)) := NA]
+# the 020-153-02 corrections now live in clean_long(), so they reach the model
+# rather than only this script
 
 #---------------------------------------------
 # Explore cardiovascular risk factor variables

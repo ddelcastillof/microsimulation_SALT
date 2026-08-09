@@ -15,7 +15,9 @@ editor_options:
 
 ```{r setup, include=FALSE}
 here::i_am("salt_results.qmd")
-source(here::here("functs", "cea.R"))
+source(here::here("R", "cea.R"))
+source(here::here("R", "psa.R"))
+source(here::here("R", "owsa.R"))
 results <- readRDS(here::here("output", "cea_results.rds"))
 ```
 
@@ -62,6 +64,71 @@ ce_plane(results$cea)
 
 ## Figure 3. Cost-effectiveness acceptability curve
 
-*Pending probabilistic sensitivity analysis (later deliverable).*
+```{r fig3}
+#| echo: false
+#| include: true
+#| message: false
+if (is.null(results$psa)) {
+  cat("Not run. Re-run with `SALT_PSA_N=1000 Rscript run_microsim.R`.")
+} else {
+  ceac_plot(ceac(results$psa))
+}
+```
 
 # Sensitivity analyses
+
+## Figure 4. One-way sensitivity analysis (tornado)
+
+```{r fig4}
+#| echo: false
+#| include: true
+#| message: false
+if (is.null(results$owsa)) {
+  cat("Not run. Re-run with `SALT_OWSA=TRUE Rscript run_microsim.R`.")
+} else {
+  tornado_plot(results$owsa)
+}
+```
+
+## Table 3. One-way sensitivity analysis ranges
+
+```{r tab3}
+#| echo: false
+#| include: true
+#| message: false
+if (!is.null(results$owsa)) {
+  knitr::kable(results$owsa[, .(Parameter = label, Low = low, High = high,
+                                `ICER at low` = out_low,
+                                `ICER at high` = out_high,
+                                Spread = spread)], digits = 2)
+}
+```
+
+## Figure 5. Cost-effectiveness plane (PSA)
+
+```{r fig5}
+#| echo: false
+#| include: true
+#| message: false
+if (!is.null(results$psa)) ce_plane_psa(results$psa)
+```
+
+## Table 4. Probabilistic results
+
+```{r tab4}
+#| echo: false
+#| include: true
+#| message: false
+if (!is.null(results$psa)) {
+  knitr::kable(psa_summary(results$psa), digits = 3)
+}
+```
+
+## Figure 6. PSA convergence
+
+```{r fig6}
+#| echo: false
+#| include: true
+#| message: false
+if (!is.null(results$psa)) psa_convergence(results$psa, "icer_daly")
+```
