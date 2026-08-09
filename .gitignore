@@ -11,13 +11,20 @@
 
 # All the content from the data folder
 ## Maybe we can create synthetic data for testing in the future
-data/
+## glob the contents, not the directory itself, so the negation below works
+data/*
+## ...except public reference tables, which carry no participant data and are
+## a hard dependency of the model (see functs/globorisk_risk.R)
+!data/gbd_ihd_stroke_peru.csv
 
 # PDF output until it is finished
 report/
 
 # All output until it is finished
 output/
+
+# Run logs (run_local.sh and simulate.sbatch both write here)
+logs/
 
 # Formatting files
 assets/
@@ -39,3 +46,10 @@ CLAUDE.md
 
 # docs folder
 docs/
+**/*.quarto_ipynb
+
+# Reports
+reports/
+
+# Notes 
+Notes.md
