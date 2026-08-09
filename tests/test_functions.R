@@ -4,8 +4,8 @@
 
 pacman::p_load(testthat)
 
-source(here::here("functs", "cleaning.R"))
-source(here::here("functs", "dictionary.R"))
+source(here::here("R", "cleaning.R"))
+source(here::here("R", "dictionary.R"))
 
 print("Running tests for cleaning and dictionary functions...")
 
