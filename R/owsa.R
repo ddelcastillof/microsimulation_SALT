@@ -11,6 +11,12 @@
 # methodological choices rather than uncertain quantities, so they belong in
 # one-way and scenario analysis, not in the probabilistic sampling.
 #
+# params$post_trial is deliberately absent too, for a mechanical reason as
+# well as a conceptual one. It is a string, and run_owsa() writes `low` and
+# `high` into numeric data.table columns, so rbindlist would coerce the whole
+# table. It is reported as its own scenario comparison in run_microsim.R
+# instead, which is the right shape for a binary structural assumption anyway.
+#
 # Requires R/psa.R to be sourced first: assign_path() and apply_value()
 # are shared with the PSA so both analyses substitute parameters identically.
 
@@ -72,6 +78,20 @@ owsa_ranges <- function(base = get_params()) {
     risk_calib = rng("risk_calib", "Globorisk calibration multiplier",
                      "params", "risk_calib", 0.5, 1.5,
                      "PLACEHOLDER: pending the CVD event definition decision"),
+
+    # --- lifetime mortality inputs ---
+    # These matter far more at a lifetime horizon than at the trial's 2.5
+    # years, because they govern how much of the cohort survives long enough
+    # for the intervention to avert anything.
+    hr_postcvd = rng("hr_postcvd", "Post-CVD excess mortality hazard",
+                     "params", "hr_postcvd", 1.25, 2.5,
+                     "PLACEHOLDER: literature range for post-event excess mortality"),
+    mort_calib = rng("mort_calib", "Background mortality level (GBD)",
+                     "params", "mort_calib", 0.8, 1.25,
+                     "PLACEHOLDER: pending the GBD uncertainty interval"),
+    cf_calib   = rng("cf_calib", "Acute CVD case-fatality level",
+                     "params", "cf_calib", 0.75, 1.33,
+                     "PLACEHOLDER: pending the case-fatality sources"),
 
     # methodological choices: conventional 0-5% bracket around the 3% base case
     d_c = rng("d_c", "Cost discount rate", "params", "d_c", 0, 0.05,

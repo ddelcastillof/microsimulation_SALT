@@ -32,15 +32,52 @@ results <- readRDS(here::here("output", "cea_results.rds"))
 
 p <- results$params
 knitr::kable(data.frame(
-  Parameter = c("Cycles", "Cycle length (yr)", "Discount rate",
-                "Treatment effect on SBP (mmHg)"),
-  Value     = c(as.character(as.integer(p$n_t)),
+  Parameter = c("Horizon", "Cycles (total)", "Cycles observed in trial",
+                "Cycle length (yr)", "Discount rate",
+                "Treatment effect on SBP (mmHg)",
+                "Post-trial exposure", "Post-CVD excess mortality hazard"),
+  Value     = c(sprintf("%.1f yr (to age %d)", p$n_t * p$cycle_length, p$max_age),
+                as.character(as.integer(p$n_t)),
+                as.character(as.integer(p$n_trial)),
                 format(round(p$cycle_length, 3), nsmall = 3),
-                paste0(p$d_c * 100, "%"), paste0(p$delta_sbp, " mmHg"))
+                paste0(p$d_c * 100, "%"), paste0(p$delta_sbp, " mmHg"),
+                p$post_trial, format(p$hr_postcvd))
 ))
 ```
 
-## Table 2. Outcomes and definitions
+The first `r as.integer(p$n_trial)` cycles follow the trial's own measurement
+rhythm, one cycle per inter-visit interval. Beyond them each participant's last
+observed blood pressure is carried forward, so every post-trial difference
+between arms is the treatment effect itself rather than a projection artefact.
+Age still advances, so absolute risk continues to climb.
+
+## Table 2a. Post-trial exposure scenarios
+
+```{r tab2a}
+#| echo: false
+#| include: true
+#| message: false
+if (!is.null(results$cea_stop)) {
+  sc <- function(x, lab) data.frame(
+    Scenario           = lab,
+    `Incremental cost` = x$d_cost,
+    `DALYs averted`    = x$daly_averted,
+    `QALYs gained`     = x$qaly_gained,
+    `ICER per DALY`    = x$icer_daly,
+    check.names = FALSE)
+  knitr::kable(rbind(
+    sc(results$cea,      "Exposure continues (base case)"),
+    sc(results$cea_stop, "Exposure stops at trial end")), digits = c(0, 2, 6, 6, 1))
+}
+```
+
+Under the base case both the salt-substitute cost and its effect on blood
+pressure persist for the whole horizon. The sensitivity scenario ends both when
+the trial does: the arms' blood pressures converge at the first projected cycle
+and no further intervention cost accrues, while events already averted during
+the trial stay averted.
+
+## Table 2. Outcomes by arm
 
 ```{r tab2}
 #| echo: false

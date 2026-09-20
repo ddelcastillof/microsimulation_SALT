@@ -1,0 +1,346 @@
+---
+title: "Trial-estimated parameters for the SALT cost-effectiveness model"
+subtitle: "Replication of Bernabe-Ortiz et al. (2020), and new mortality and CVD estimates"
+author: "Darwin Del Castillo"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-float: true
+    number-sections: true
+    theme: readable
+    df-print: kable
+    code-fold: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup}
+#| include: false
+here::i_am("salt_results.qmd")
+library(data.table)
+library(ggplot2)
+library(survival)
+res <- readRDS(here::here("output", "params_est.rds"))
+fmt_ci <- function(e, l, h, d = 2) {
+  # a separated model returns an astronomical point estimate and an infinite
+  # bound; print those as "not estimable" rather than 818784100.00 (Inf, Inf)
+  ok <- is.finite(e) & is.finite(l) & is.finite(h) & abs(e) < 1e3
+  out <- rep("not estimable", length(e))
+  out[ok] <- sprintf(paste0("%.", d, "f (%.", d, "f, %.", d, "f)"),
+                     e[ok], l[ok], h[ok])
+  out
+}
+```
+
+# Why this document exists
+
+The microsimulation on `exp/globorisk` takes CVD risk from the Globorisk office
+equation, which is external to this trial, validated only for ages 40–74, and
+carries an unresolved 3–4× level disagreement with GBD Peru incidence. The trial
+has seven waves of follow-up on `r res$long_n$ids` people and can estimate some
+of these quantities itself.
+
+Bernabe-Ortiz et al. (*Nature Medicine* 2020;26:374–8) analysed this same
+dataset, and the supplementary material gives the exact Stata specification.
+That makes replication a **validation gate**: if `clean_long()` reproduces the
+published numbers, the cleaning is trustworthy, and the same machinery can be
+pointed at the endpoints the paper never analysed — death and CVD.
+
+Everything below is produced by `run_params_est.R`, which caches to
+`output/params_est.rds`. This document only renders that file.
+
+# Replication
+
+## Cohort
+
+```{r cohort}
+#| echo: false
+data.table(
+  Quantity = c("Person-waves", "Individuals", "Households (codhogar)"),
+  Reproduced = c(res$long_n$rows, res$long_n$ids, res$long_n$households),
+  Published  = c("16,632 samples", "2,376", "not reported")
+)
+```
+
+## Wide-vs-long event reconciliation
+
+The trial data exist in two independently structured files. The long file is one
+row per person-wave; the wide file is one row per person with a column block per
+visit. Both should encode the same events. They do:
+
+```{r recon}
+#| echo: false
+res$wide_events$recon
+```
+
+Zero mismatches on every event variable, so `clean_long()` is not dropping or
+duplicating events during the wave assignment.
+
+## Intervention effects on blood pressure and hypertension incidence
+
+Published values are Table 2 (blood pressure) and Supplementary Table 3
+(hypertension incidence). "Match" means the point estimate is within 0.10 of the
+published one, on the mmHg scale for blood pressure and the hazard-ratio scale
+for incidence.
+
+```{r replication}
+#| echo: false
+r <- copy(res$replication)
+r[, .(Quantity = quantity, Source = source,
+      Published = fmt_ci(published, published_low, published_high),
+      Reproduced = fmt_ci(estimate, low, high, 3),
+      Difference = round(diff, 3),
+      Verdict = verdict)]
+```
+
+All four blood-pressure coefficients reproduce to two decimals. The hypertension
+hazard ratios reproduce to within 0.06.
+
+### One quantity that does not reproduce: person-time
+
+```{r pt-residual}
+#| echo: false
+pt <- res$rates[endpoint == "htn_composite"]
+data.table(
+  Quantity = c("Incident cases, control", "Incident cases, intervention",
+               "Person-years, control", "Person-years, intervention"),
+  Published = c(107, 133, 1961.1, 2712.3),
+  Reproduced = c(pt[arm == "Control", events], pt[arm == "Intervention", events],
+                 round(pt[arm == "Control", py], 1),
+                 round(pt[arm == "Intervention", py], 1))
+)[, Difference := sprintf("%+.1f%%", 100 * (Reproduced - Published) / Published)][]
+```
+
+The **event counts are exact** — 107 and 133, matching Supplementary Table 3
+person for person. Person-time runs about 4% high in both arms.
+
+Because the excess is nearly proportional across arms it cancels in the hazard
+ratio, which is why the HR still reproduces. The likely cause is the censoring
+convention for the final interval: this implementation carries each person to
+their last dated visit, whereas the published analysis reports 1,891 individuals
+against the 1,914 eligible, implying 23 were dropped for having no usable
+follow-up. That difference is not recoverable from the published description. It
+is recorded here rather than tuned away.
+
+## Two specification choices that had to be recovered
+
+Neither is stated unambiguously in the paper, and both change the answer
+materially. They are recorded here because the published text alone does not
+determine them.
+
+### The survival time axis is time-on-study, not calendar time
+
+The methods say "Cox's proportional hazard modeling on a calendar time axis, to
+account for time trends". Empirically that is not what produced the published
+number:
+
+```{r axis}
+#| echo: false
+res$axis_check[, .(`Time axis` = axis,
+                   `HR (95% CI)` = fmt_ci(hr, low, high, 3),
+                   `Published` = "0.49 (0.34, 0.71)")]
+```
+
+Time since each person's own baseline visit reproduces the published hazard
+ratio; calendar date does not. Stata's `dtime` was therefore time on study.
+`build_survival_set()` returns both axes so this stays testable.
+
+### Covariate adjustment uses baseline values, not time-varying ones
+
+The paper adjusts for "age, sex, education, wealth index and BMI **at
+baseline**". Using the time-varying columns instead moves the fully adjusted
+hypertension HR from 0.489 to 0.586 — outside the published interval. The
+`baseline_covars()` helper carries each person's wave-0 value to all their rows.
+
+### Inference is CR0 with a normal critical value
+
+Model-based standard errors are roughly half the published width (0.25 vs 0.40
+for SBP), because they ignore village clustering. Stata's
+`vce(cluster codvilla)` is a CR0 sandwich reported against a normal critical
+value, which is what `fit_bp_model()` uses. CR2 would be the better small-sample
+choice with only six clusters, but it is not computable here: it requires a
+matrix square root per cluster and these clusters hold ~2,500 observations each.
+CR1 and CR3 standard errors are carried in the output for comparison.
+
+```{r se-compare}
+#| echo: false
+res$bp[, .(Outcome = outcome, Adjustment = adjust,
+           Estimate = round(estimate, 3),
+           `SE model-based` = round(se_model, 3),
+           `SE CR0` = round(se, 3),
+           `SE CR1` = round(se_cr1, 3),
+           `SE CR3` = round(se_cr3, 3))]
+```
+
+## Proportional hazards
+
+```{r schoenfeld}
+#| echo: false
+res$schoenfeld[, .(`Schoenfeld chi-squared` = round(chisq, 3),
+                   `p` = round(p, 3),
+                   `Published p` = 0.40)]
+```
+
+# New endpoints
+
+The paper did not analyse mortality or CVD. Both are estimated here with the
+same design — shared gamma frailty on the village, time-on-study axis.
+
+## Event counts and crude rates
+
+```{r rates}
+#| echo: false
+res$rates[, .(Endpoint = endpoint, Arm = arm, Events = events,
+              `Person-years` = round(py, 1),
+              `Rate per 100 py` = round(rate_100py, 2))]
+```
+
+## Hazard ratios
+
+```{r hr}
+#| echo: false
+res$incidence[, .(Endpoint = label, Adjustment = adjust, Events = events,
+                  `HR (95% CI)` = fmt_ci(hr, low, high, 3),
+                  `HR (frailtyEM)` = round(hr_emfrail, 3),
+                  Converged = is.na(warning))]
+```
+
+## Mortality
+
+`r res$rates[endpoint == "death", sum(events)]` deaths over
+`r round(res$rates[endpoint == "death", sum(py)])` person-years. This is the one
+new endpoint that is usable.
+
+```{r km}
+#| echo: false
+#| fig-height: 4
+d <- res$sets$death
+km <- survfit(Surv(g0, g1, event) ~ intervencion, data = d)
+plot(km, col = c("#2b6cb0", "#b7791f"), lwd = 2, conf.int = TRUE,
+     xlab = "Years since baseline visit", ylab = "Survival",
+     ylim = c(0.95, 1))
+legend("bottomleft", c("Control", "Intervention"),
+       col = c("#2b6cb0", "#b7791f"), lwd = 2, bty = "n")
+```
+
+The time-and-cluster-adjusted estimate is the one to use. The fully adjusted
+model fits five covariates to 34 events — roughly seven events per parameter,
+well below the conventional ten — so its interval is not trustworthy even though
+it is narrower.
+
+```{r death-hr}
+#| echo: false
+res$incidence[label == "death",
+  .(Adjustment = adjust, Events = events,
+    `HR (95% CI)` = fmt_ci(hr, low, high, 3),
+    `Free parameters` = fifelse(adjust == "full", 6L, 1L),
+    `Events per parameter` = round(events / fifelse(adjust == "full", 6, 1), 1))]
+```
+
+## CVD: why these estimates should not be used
+
+The flag-based CVD estimate is large, positive and nominally in the wrong
+direction. It is an artefact of how the CVD history variables were collected,
+and three pieces of evidence establish that.
+
+### 1. The flags reverse themselves
+
+`derrame`, `infarto`, `insuficiencia` and `otracor` are point-in-time
+self-reports, not a cumulative history. Nearly every reported "Yes" is followed
+by a "No" at the next visit:
+
+```{r revert}
+#| echo: false
+res$wide_events$revert[, .(Variable = var, `Ever reported` = ever,
+                           `At baseline` = prevalent,
+                           `First after baseline` = first_after_w0,
+                           `Reverse later` = reverts)]
+```
+
+A variable that contradicts itself at the next visit cannot distinguish a new
+event from a re-report of an old one.
+
+### 2. Only stroke carries a corroborating event date
+
+The wide file keeps date fields the long file drops, and only for `derrame`.
+At baseline, `derrame_a` records years since the stroke — every baseline case is
+historical, some by decades:
+
+```{r stroke-prev}
+#| echo: false
+res$wide_events$stroke$prevalent[, .(codigo, `Years since stroke` = years_since,
+                                     `Doctor-confirmed` = confirmed)]
+```
+
+At follow-up, exactly two people report a stroke, and both carry a month and
+year consistent with the wave they reported it in:
+
+```{r stroke-inc}
+#| echo: false
+res$wide_events$stroke$incident[, .(codigo, Wave = wave,
+                                    `Event date` = format(event_date, "%b %Y"),
+                                    `Doctor-confirmed` = confirmed)]
+```
+
+`infarto`, `insuficiencia` and `otracor` have no date fields in either file, so
+none of their "incident" cases can be corroborated at all.
+
+### 3. The verifiable count is 2, not 13
+
+```{r cvd-compare}
+#| echo: false
+res$incidence[label %in% c("cvd_flag", "cvd_verified") & adjust == "time_cluster",
+  .(Definition = c("Any flag turns Yes after baseline",
+                   "Stroke with a corroborating event date")[
+                     match(label, c("cvd_flag", "cvd_verified"))],
+    Events = events,
+    `HR (95% CI)` = fmt_ci(hr, low, high, 2))]
+```
+
+With two events, both in intervention person-time and none in control, the model
+is separated and the hazard ratio is not defined. That is the honest ceiling on
+what this trial can say about CVD incidence.
+
+**Recommendation: Globorisk remains the CVD risk source.** The trial cannot
+estimate a CVD hazard, and the flag-based estimate should not be carried into
+the microsimulation under any adjustment.
+
+# What this contributes to the microsimulation
+
+```{r contrib}
+#| echo: false
+data.table(
+  Parameter = c("delta_sbp", "delta_dbp", "Hypertension incidence",
+                "All-cause mortality", "CVD-cause mortality",
+                "CVD incidence", "Costs", "Utilities / disability weights"),
+  Source = c("This analysis", "This analysis", "This analysis",
+             "This analysis", "This analysis (11 deaths)",
+             "Globorisk — trial cannot estimate it",
+             "Costing study", "GBD / placeholder"),
+  Status = c("replicated", "replicated", "replicated",
+             "new, usable", "new, sparse",
+             "unchanged", "unchanged", "unchanged")
+)
+```
+
+The blood-pressure effect the microsimulation already uses
+(`delta_sbp = -1.29`) is confirmed by this replication. The new contribution is
+mortality: `r res$rates[endpoint == "death", sum(events)]` deaths estimated with
+the trial's own design, replacing pooled counts that ignored village clustering.
+
+# Session
+
+```{r session}
+#| echo: false
+data.table(
+  Package = c("R", "lme4", "clubSandwich", "survival", "frailtyEM", "data.table"),
+  Version = c(paste(R.version$major, R.version$minor, sep = "."),
+              as.character(packageVersion("lme4")),
+              as.character(packageVersion("clubSandwich")),
+              as.character(packageVersion("survival")),
+              as.character(packageVersion("frailtyEM")),
+              as.character(packageVersion("data.table")))
+)
+```

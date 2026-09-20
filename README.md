@@ -6,15 +6,18 @@ This repo contains the code for the paper mentioned above. The data belongs to t
 
 ## Running the model
 
-`run_microsim.R` is the entry point. It runs the base case, the one-way deterministic sensitivity analysis (OWSA) and the probabilistic sensitivity analysis (PSA), then caches everything to `output/cea_results.rds`. `salt_results.qmd` only reads that file — rendering the report never re-runs the model.
+`run_microsim.R` is the entry point. It runs the base case, the post-trial exposure scenario, the one-way deterministic sensitivity analysis (OWSA) and the probabilistic sensitivity analysis (PSA), then caches everything to `output/cea_results.rds`. `salt_results.qmd` only reads that file — rendering the report never re-runs the model.
+
+The base case uses a **lifetime horizon**: the trial's own six 5-month cycles, then projection to age 100 for the youngest participant (197 cycles, 82.1 years). Beyond the trial each participant's last observed blood pressure is carried forward, and by default both the salt-substitute cost and its effect persist for the rest of the horizon. A sensitivity scenario ends both when the trial does; both are reported side by side.
 
 Two wrappers call the same entry point: `run_local.sh` for a workstation, `simulate.sbatch` for SLURM. The division of labour is that the cluster runs the model and the report is rendered locally.
 
 ### Locally
 
 ```bash
-./run_local.sh                 # base case + OWSA + 1000-draw PSA (~25 min)
-./run_local.sh --quick         # base case only (~5 s), for smoke tests
+./run_local.sh                 # lifetime base case + OWSA + 1000-draw PSA (~5.5 h)
+./run_local.sh --quick         # trial horizon, base case only (~5 s), for smoke tests
+./run_local.sh --horizon trial # 6 observed trial cycles instead of the lifetime 197
 ./run_local.sh -n 200 -r       # 200 PSA draws, then render the report
 ./run_local.sh -s 123 -o       # seed 123, skip the OWSA
 ```
@@ -24,7 +27,8 @@ Two wrappers call the same entry point: `run_local.sh` for a workstation, `simul
 | `-n, --psa N` | PSA draws; `0` disables the PSA | 1000 |
 | `-s, --seed N` | RNG seed | 42 |
 | `-o, --no-owsa` | Skip the one-way pass | OWSA runs |
-| `-q, --quick` | Shorthand for `--psa 0 --no-owsa` | — |
+| `--horizon H` | `trial` (6 cycles, 2.5 yr) or `lifetime` (197 cycles, 82.1 yr) | lifetime |
+| `-q, --quick` | Shorthand for `--psa 0 --no-owsa --horizon trial` | — |
 | `-r, --render` | Render `salt_results.qmd` after a successful run | no render |
 | `--threads N` | BLAS/OpenMP threads | 1 |
 | `-h, --help` | Flag reference | — |
@@ -38,7 +42,7 @@ Threads are pinned to 1 by default to match the cluster, so local and cluster re
 The underlying entry point takes the same configuration through the environment, if you would rather skip the wrapper:
 
 ```bash
-SALT_PSA_N=1000 SALT_OWSA=TRUE SALT_SEED=42 Rscript run_microsim.R
+SALT_PSA_N=1000 SALT_OWSA=TRUE SALT_SEED=42 SALT_HORIZON=lifetime Rscript run_microsim.R
 ```
 
 Flags passed to `run_local.sh` override these variables; a variable already set in the environment is used as the default when no flag is given.

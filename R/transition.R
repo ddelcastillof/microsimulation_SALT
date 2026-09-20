@@ -13,6 +13,11 @@ print("Loading transition functions")
 # CVD is a one-cycle tunnel state. Healthy faces competing risks of an
 # incident CVD event and non-CVD death, combined on the rate scale so the
 # resulting probabilities are always valid.
+#
+# The three mortality inputs may be scalars or n_i x n_t matrices. They are
+# matrices whenever mortality varies with age, which a lifetime horizon
+# requires; they are scalars in fixtures and in the trial-horizon scenario.
+# at_cycle() accepts both so neither caller has to know which it holds.
 probs <- function(v_state, si, t, arm, params) {
   v_n <- params$state_names
   n_i <- length(v_state)
@@ -23,7 +28,7 @@ probs <- function(v_state, si, t, arm, params) {
   if (any(is_H)) {
     p_cvd   <- si$cvd_risk[[arm]][is_H, t]
     r_cvd   <- -log(1 - p_cvd)
-    r_death <- -log(1 - mort$p_background)
+    r_death <- -log(1 - at_cycle(mort$p_background, is_H, t))
     r_tot   <- r_cvd + r_death
     p_exit  <- 1 - exp(-r_tot)
     share   <- ifelse(r_tot > 0, r_cvd / r_tot, 0)
@@ -34,18 +39,31 @@ probs <- function(v_state, si, t, arm, params) {
 
   is_C <- v_state == "CVD"
   if (any(is_C)) {
-    P[is_C, "Dead"]    <- mort$p_cvd_fatal
-    P[is_C, "PostCVD"] <- 1 - mort$p_cvd_fatal
+    p_fatal <- at_cycle(mort$p_cvd_fatal, is_C, t)
+    P[is_C, "Dead"]    <- p_fatal
+    P[is_C, "PostCVD"] <- 1 - p_fatal
   }
 
   is_P <- v_state == "PostCVD"
   if (any(is_P)) {
-    P[is_P, "Dead"]    <- mort$p_postcvd
-    P[is_P, "PostCVD"] <- 1 - mort$p_postcvd
+    p_pdeath <- at_cycle(mort$p_postcvd, is_P, t)
+    P[is_P, "Dead"]    <- p_pdeath
+    P[is_P, "PostCVD"] <- 1 - p_pdeath
   }
 
   is_D <- v_state == "Dead"
   if (any(is_D)) P[is_D, "Dead"] <- 1
 
   P
+}
+
+# at_cycle: read a mortality input for the individuals in `idx` at cycle `t`.
+#
+# A scalar is returned as-is and recycles across those individuals, which is
+# what the trial-horizon scenario and every test fixture rely on. A matrix is
+# subset to the selected rows and this cycle's column, which is what an
+# age-varying lifetime mortality table needs. Keeping both behind one accessor
+# is what let the lifetime mortality change land without rewriting fixtures.
+at_cycle <- function(x, idx, t) {
+  if (is.matrix(x)) x[idx, t] else x
 }

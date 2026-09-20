@@ -62,7 +62,12 @@ draw_dist <- function(spec, n) {
       rbeta(n, spec$events + 0.5, spec$n - spec$events + 0.5)
     },
     normal    = rnorm(n, spec$mean, spec$se),
+    # lognormal is the unit-median form used by the calibration multipliers,
+    # where 1 means "take the source at face value". lognormal_mean is the
+    # same family centred somewhere else, for a multiplier whose base case is
+    # not 1 -- the post-CVD excess hazard, say.
     lognormal = rlnorm(n, meanlog = 0, sdlog = spec$sdlog),
+    lognormal_mean = rlnorm(n, meanlog = spec$meanlog, sdlog = spec$sdlog),
     stop("unknown distribution: ", spec$dist)
   )
 }
@@ -76,11 +81,15 @@ draw_dist <- function(spec, n) {
 #   dist   - distribution name understood by draw_dist
 #   source - provenance; "PLACEHOLDER" flags a dispersion still to be sourced
 #
-# `mortality` is the mortality_rates() list. Supplying it adds the three
-# trial-derived transition probabilities, drawn from their own event counts so
-# no dispersion has to be invented. Omitting it leaves them fixed at the point
-# estimate rather than sampling them from a made-up standard error.
-psa_specs <- function(mortality = NULL, base = get_params()) {
+# Mortality uncertainty is carried by the three level multipliers below rather
+# than by the trial's own event counts. Earlier versions drew p_background,
+# p_cvd_fatal and p_postcvd as Beta-Jeffreys posteriors from mortality_rates().
+# That is gone for two reasons: those three are now age x sex MATRICES, not
+# scalars, so a single Beta draw cannot represent them; and their trial
+# denominators were empty (run_microsim.R never refined the person-cycle state),
+# so every draw returned a constant 0. draw_dist() keeps its beta_counts branch
+# for any future parameter that genuinely has trial counts behind it.
+psa_specs <- function(base = get_params()) {
   # formals are dot-prefixed on purpose: R partially matches argument names
   # against formals declared before `...`, so a plain `name` formal would
   # swallow the `n = ` distribution argument below and silently shift every
@@ -139,23 +148,28 @@ psa_specs <- function(mortality = NULL, base = get_params()) {
     risk_calib = spec("risk_calib", "Globorisk calibration multiplier",
                       "params", "risk_calib", "lognormal",
                       "PLACEHOLDER: sdlog pending the CVD event definition decision",
-                      sdlog = 0.2)
-  )
+                      sdlog = 0.2),
 
-  if (!is.null(mortality)) {
-    cnt <- mortality$counts
-    mort_spec <- function(name, label) {
-      r <- cnt[param == name]
-      spec(name, label, "mortality", name, "beta_counts",
-           "Trial event counts (Beta-Jeffreys posterior)",
-           events = as.integer(r$events), n = as.integer(r$n))
-    }
-    out <- c(out, list(
-      p_background = mort_spec("p_background", "Non-CVD death probability"),
-      p_cvd_fatal  = mort_spec("p_cvd_fatal",  "CVD case fatality"),
-      p_postcvd    = mort_spec("p_postcvd",    "Post-CVD death probability")
-    ))
-  }
+    # --- lifetime mortality inputs ---
+    # All three are multiplicative and act on the cumulative-hazard scale, so
+    # lognormal is the natural family (positive, median 1) -- the same choice
+    # risk_calib makes for the Globorisk level. They are params entries, not
+    # mortality entries, which is what lets lifetime_mortality() apply them
+    # inside evaluate_model() and so keeps the GBD matrices themselves
+    # independent of the draw.
+    mort_calib = spec("mort_calib", "Background mortality level (GBD)",
+                      "params", "mort_calib", "lognormal",
+                      "PLACEHOLDER: sdlog pending the GBD uncertainty interval",
+                      sdlog = 0.15),
+    cf_calib   = spec("cf_calib", "Acute CVD case-fatality level",
+                      "params", "cf_calib", "lognormal",
+                      "PLACEHOLDER: sdlog pending the case-fatality sources",
+                      sdlog = 0.25),
+    hr_postcvd = spec("hr_postcvd", "Post-CVD excess mortality hazard",
+                      "params", "hr_postcvd", "lognormal_mean",
+                      "PLACEHOLDER: literature excess hazard, sdlog to be sourced",
+                      meanlog = log(base$hr_postcvd), sdlog = 0.2)
+  )
   out
 }
 
@@ -202,8 +216,16 @@ run_psa <- function(specs, cohort, mortality, params = get_params(),
   require(data.table)
   draws <- sample_params(specs, n_sim = n_sim, seed = seed)
 
-  # the Intervention arm's SBP depends on no sampled parameter, so its
-  # uncalibrated risk matrix is built once instead of n_sim times
+  # The Intervention arm's SBP depends on no sampled parameter, so its
+  # uncalibrated risk matrix is built once instead of n_sim times. At a
+  # lifetime horizon this is no longer an optimisation but a precondition:
+  # arm_risk() over ~197 cycles is the single most expensive call in a draw.
+  #
+  # The assumption it rests on is that nothing sampled reaches the Intervention
+  # arm -- true because the post-trial projection carries each person's last
+  # observed SBP forward (carry_forward() in cohort.R) rather than applying a
+  # sampled drift. Adding a spec over params$globorisk, cycle_length, or any
+  # post-trial SBP trajectory would silently serve a stale matrix here.
   risk_i <- arm_risk(cohort$sbp_intervention, cohort$base, params)
 
   out <- vector("list", n_sim)

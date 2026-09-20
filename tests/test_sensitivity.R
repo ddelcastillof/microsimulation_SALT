@@ -119,18 +119,30 @@ test_that("psa_specs excludes the discount rates", {
   expect_false(any(c("d_c", "d_e") %in% paths))
 })
 
-test_that("psa_specs draws mortality from trial counts when supplied", {
-  mort <- mortality_rates(data.table(
-    state     = c(rep("Healthy", 100), rep("CVD", 10), rep("PostCVD", 20)),
-    dead      = c(rep(0, 96), rep(1, 4), rep(c(1, 0), c(3, 7)), rep(0, 18), 1, 1),
-    cvd_death = c(rep(0, 96), 1, 1, 0, 0, rep(c(1, 0), c(3, 7)), rep(0, 20))
-  ))
-  specs <- psa_specs(mortality = mort)
-  fatal <- Filter(function(s) s$name == "p_cvd_fatal", specs)[[1]]
-  expect_equal(fatal$dist, "beta_counts")
-  expect_equal(fatal$events, 3L)
-  expect_equal(fatal$n, 10L)
-  expect_false(fatal$source == "PLACEHOLDER")   # counts are real trial data
+test_that("psa_specs carries mortality uncertainty as level multipliers", {
+  # The three trial-count specs are gone. p_background, p_cvd_fatal and
+  # p_postcvd are age x sex matrices now, which a single Beta draw cannot
+  # represent, and their trial denominators were empty so every draw returned
+  # a constant 0. Their uncertainty is carried by multipliers on params
+  # instead, which lifetime_mortality() applies inside evaluate_model().
+  specs <- psa_specs()
+  nm <- vapply(specs, `[[`, character(1), "name")
+  expect_false(any(c("p_background", "p_cvd_fatal", "p_postcvd") %in% nm))
+  expect_true(all(c("mort_calib", "cf_calib", "hr_postcvd") %in% nm))
+
+  for (n in c("mort_calib", "cf_calib", "hr_postcvd")) {
+    sp <- Filter(function(s) s$name == n, specs)[[1]]
+    expect_equal(sp$target, "params")        # not "mortality"
+    expect_true(sp$dist %in% c("lognormal", "lognormal_mean"))
+  }
+})
+
+test_that("draw_dist lognormal_mean centres on the supplied median", {
+  set.seed(42)
+  x <- draw_dist(list(dist = "lognormal_mean", meanlog = log(1.75),
+                      sdlog = 0.2), 20000)
+  expect_true(all(x > 0))
+  expect_equal(stats::median(x), 1.75, tolerance = 0.02)
 })
 
 test_that("sample_params returns one row per draw and one column per spec", {

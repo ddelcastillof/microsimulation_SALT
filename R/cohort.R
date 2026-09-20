@@ -17,7 +17,11 @@ build_cohort <- function(long, village_order, params) {
   require(purrr)
   long <- copy(long)
   setorder(long, codigo, wave)
-  n_t <- params$n_t
+  # n_trial is the observed width (one column per follow-up wave); n_t is the
+  # full modelled horizon, which for a lifetime run is much wider. Measurement
+  # matrices are built at n_trial and then projected out to n_t.
+  n_trial <- params$n_trial
+  n_t     <- params$n_t
   ids <- sort(unique(long$codigo))
 
   # --- numeric risk-factor coding ---
@@ -66,12 +70,17 @@ build_cohort <- function(long, village_order, params) {
   base[, state_0 := fifelse(prevalent %in% TRUE, "PostCVD", "Healthy")]
   state_0 <- base[match(ids, codigo), state_0]
 
-  # --- treatment status per cycle (cycles 1..n_t) ---
+  # --- treatment status per cycle (cycles 1..n_trial) ---
+  # Deliberately only as wide as the trial. The crossover schedule is observed
+  # data; whether exposure persists after the trial is a scenario choice, and
+  # scenario choices belong on the single params -> ICER path in
+  # evaluate_model() so that OWSA and PSA see them. Widening `treated` here
+  # would pin the post-trial assumption at cohort-build time.
   cross <- map_int(long[match(ids, codigo), codigovilla],
                    \(v) village_order[[as.character(v)]])
-  treated <- outer(cross, seq_len(n_t), function(cw, t) t >= cw)
+  treated <- outer(cross, seq_len(n_trial), function(cw, t) t >= cw)
 
-  # --- measurement matrices: rows = individuals, cols = cycles 1..n_t ---
+  # --- measurement matrices: rows = individuals, cols = cycles 1..n_trial ---
   # fun.aggregate collapses the rare codigo x wave duplicate (one such
   # case in the real data) by taking the first non-NA value
   wave_matrix <- function(col) {
@@ -79,8 +88,8 @@ build_cohort <- function(long, village_order, params) {
                   fun.aggregate = function(x) {
                     x <- x[!is.na(x)]; if (length(x)) x[1] else NA_real_
                   })
-    if (ncol(wide) - 1L != n_t) {
-      stop("Expected ", n_t, " follow-up waves but found ", ncol(wide) - 1L,
+    if (ncol(wide) - 1L != n_trial) {
+      stop("Expected ", n_trial, " follow-up waves but found ", ncol(wide) - 1L,
            "; ", col, " matrix would be mis-sized.")
     }
     m <- unname(as.matrix(wide[match(ids, codigo), -1]))
@@ -94,12 +103,20 @@ build_cohort <- function(long, village_order, params) {
     m
   }
 
-  sbp_intervention <- wave_matrix("sbp")
-  sbp_control <- sbp_intervention + treated * abs(params$delta_sbp)
+  sbp_intervention <- carry_forward(wave_matrix("sbp"), n_t)
   # DBP is observed, not counterfactual: the trial estimated delta on SBP only,
   # so the same matrix serves both arms. NULL when the column is absent (test
   # fixtures), which degrades htn_flag() to its systolic arm.
-  dbp <- if ("dbp" %in% names(long)) wave_matrix("dbp") else NULL
+  dbp <- if ("dbp" %in% names(long)) carry_forward(wave_matrix("dbp"), n_t) else NULL
+
+  # sbp_control and htn here are the BASE-CASE views only, kept for inspection
+  # and for callers that want the cohort's own counterfactual. evaluate_model()
+  # rebuilds both from params$delta_sbp and params$post_trial on every call;
+  # reusing these would make every sensitivity analysis a no-op. `treated` is
+  # padded to the horizon under the base-case "continue" assumption purely so
+  # these two stay conformable with the projected SBP matrix.
+  treated_base <- post_trial_treated(treated, n_t, params$post_trial)
+  sbp_control <- sbp_intervention + treated_base * abs(params$delta_sbp)
 
   # --- hypertension cost flag on each arm's blood pressure ---
   htn <- list(Intervention = htn_flag(sbp_intervention, params, dbp),
@@ -137,4 +154,48 @@ htn_flag <- function(sbp_matrix, params, dbp_matrix = NULL) {
   if (is.null(dbp_matrix)) return(flag)
   stopifnot(identical(dim(dbp_matrix), dim(sbp_matrix)))
   flag | dbp_matrix >= params$htn_dbp
+}
+
+# carry_forward: widen a measurement matrix from the observed trial width to
+# the full modelled horizon by repeating its last observed column.
+#
+# This is the post-trial projection rule, and it is deliberately the most
+# assumption-light one available: each person holds their final observed value
+# for the rest of the horizon. Two consequences are load-bearing.
+#
+# First, the whole post-trial gap between arms is then exactly delta_sbp, never
+# an artefact of a drift model. Second, because no sampled parameter touches
+# the Intervention arm's SBP, run_psa() and run_owsa() can keep building its
+# uncalibrated risk matrix once and reusing it across every draw -- which at a
+# ~197-cycle horizon is the difference between a tractable PSA and an
+# intractable one. A sampled SBP-drift parameter would invalidate that cache
+# silently, producing plausible numbers from a stale matrix.
+#
+# Age still varies over the projection: cvd_risk() advances it in arm_risk(),
+# so absolute risk climbs even though the measured risk factors are frozen.
+carry_forward <- function(m, n_t) {
+  if (ncol(m) >= n_t) return(m)
+  cbind(m, matrix(m[, ncol(m)], nrow(m), n_t - ncol(m)))
+}
+
+# post_trial_treated: extend the observed crossover schedule across the
+# projected cycles according to the post-trial exposure scenario.
+#
+#   "continue" - everyone stays exposed for the rest of the horizon. By the
+#                last trial wave every village has crossed over, so this is a
+#                matrix of TRUE. Both the SBP gap and the intervention cost
+#                persist.
+#   "stop"     - exposure ends with the trial. The SBP gap closes at the first
+#                projected cycle and no further intervention cost accrues.
+#
+# One matrix expresses both, because `treated` is the only object feeding both
+# the effect (the Control arm's SBP in evaluate_model) and the cost (costs()).
+# Keeping them on a single switch is what stops the two halves of a scenario
+# drifting out of step. Events already averted during the trial stay averted
+# under "stop"; only the forward-looking gap closes.
+post_trial_treated <- function(treated, n_t, post_trial = "continue") {
+  n_post <- n_t - ncol(treated)
+  if (n_post <= 0L) return(treated)
+  cbind(treated,
+        matrix(identical(post_trial, "continue"), nrow(treated), n_post))
 }

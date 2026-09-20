@@ -107,6 +107,10 @@ clean_long <- function() {
       "codigovivienda",
       "codigofam",
       "codigopersona",
+      # codhogar is the household (1,047 units). codigovivienda has 280 and
+      # codigofam only 2, so neither can serve as the family random intercept
+      # the Bernabe-Ortiz model needs (|| codhogar:)
+      "codhogar",
       "fecha",
       "time",
       "intervencion",
@@ -145,6 +149,11 @@ clean_long <- function() {
       "assets",
       "xassets",
       "niveduca",
+      # education as the published analysis coded it: eduacat is the 3-category
+      # <7 / 7-11 / >=12 YEARS split, edua the underlying count. niveduca is
+      # school LEVEL and cannot reproduce i.eduacat
+      "eduacat",
+      "edua",
       "eqindex",
       "disaprev1",
       "disaprev2",
@@ -175,6 +184,31 @@ clean_long <- function() {
     wave
   }, by = codigo]
 
+  # rebuilding the treatment indicator from the crossover schedule.
+  # the stored intervencion is 0 on every placeholder row (no `time`) and on a
+  # handful of stragglers in villages that had already crossed over, so it
+  # understates treated person-time. The crossover wave is read back from the
+  # data as the first wave where the village is majority-treated, which
+  # reproduces data/village_order.yaml without depending on that file.
+  print(dcast(tidied_data[!is.na(time), .N,
+                          by = .(codigovilla, wave, intervencion)],
+              codigovilla + intervencion ~ wave, value.var = "N", fill = 0))
+  tidied_data[, crossover := mean(intervencion[!is.na(time)] == 1, na.rm = TRUE),
+              by = .(codigovilla, wave)]
+  tidied_data[, crossover := {
+    # which(), not logical subsetting: a village x wave group made up entirely
+    # of placeholder rows has a NaN share, and wave[NaN > 0.5] would inject an
+    # NA that propagates through min() and blanks the whole village
+    w <- wave[which(crossover > 0.5)]
+    if (length(w)) min(w) else NA_integer_
+  }, by = codigovilla]
+  tidied_data[, intervencion := as.integer(!is.na(crossover) & wave >= crossover)]
+  print(tidied_data[, .(crossover_wave = crossover[1],
+                        treated_rows   = sum(intervencion)), by = codigovilla][
+    order(crossover_wave)])
+  # scaffolding only; intervencion carries the schedule from here on
+  tidied_data[, crossover := NULL]
+
   # for those with no time variable with comorbidities as measured, set these to NA
   cat_cols <- c("db2", "smoking1", "smoking2", "infarto", "derrame",
                 "insuficiencia", "otracor", "colesterol")
@@ -182,6 +216,15 @@ clean_long <- function() {
 
   # ensuring age is an integer
   tidied_data[, age := as.integer(edad1)]
+
+  # calendar time in years from the first study visit. This is the survival
+  # time axis the published incidence analysis used ("Cox's proportional
+  # hazard modeling on a calendar time axis, to account for time trends")
+  tidied_data[, cal := as.numeric(fecha - min(fecha, na.rm = TRUE)) / 365.25]
+
+  # baseline hypertension, matching Stata's ht50: fixed at wave 0 and repeated
+  # on every row of a person. bmi0 is built further down, after the bmi repair
+  tidied_data[, ht50 := ht5[wave == 0][1], by = codigo]
 
   # mortality fixes from the pvivo x f_muerte diagnostics
   # 020-153-02 carries a death date at wave 1 but has full visits at waves 2-3,
@@ -251,7 +294,11 @@ clean_long <- function() {
                median = median(value, na.rm = TRUE),
                max    = max(value, na.rm = TRUE)
              ), by = var])
-  
+
+  ## baseline BMI carried to every row, matching Stata's bmi0. Built here
+  ## rather than with ht50 so it snapshots the REPAIRED bmi, not the raw one
+  tidied_data[, bmi0 := bmi[wave == 0][1], by = codigo]
+
   # cleaning CVD history variables
   cvd_cols <- c("derrame", "infarto", "insuficiencia", "otracor",
                 "colesterol", "smoking1", "smoking2")
@@ -372,6 +419,107 @@ prep_long <- function(data) {
     }),
     na.rm = TRUE
   ), .SDcols = pool_cols]
+}
+
+# Function 2.2: Reconstructing the per-wave event record from the wide file
+#
+# The wide file stores one column block per visit: baseline columns carry no
+# prefix, follow-ups are prefixed f1..f6. It keeps event-DATE fields that the
+# long file drops, and those dates are the only way to separate a genuinely
+# incident event from a re-report of an old one. `derrame` is the only CVD
+# variable with them: `derrame_a` gives years-since-stroke at baseline, and
+# `f{i}derramec_m` / `f{i}derramec_a` give the month and 2-digit year of a
+# stroke reported at follow-up i.
+#
+# Returns a list:
+#   long   - reshaped person x wave event table, one row per person-wave
+#   recon  - wide vs long counts per variable; a mismatch means a cleaning bug
+#   stroke - the dated stroke records, prevalent and incident
+#   revert - per-variable reversion counts, the evidence that the flag-only
+#            variables measure recall rather than incidence
+#
+# `long_data` is the clean_long() output to reconcile against; pass NULL to
+# skip the reconciliation and get the wide side alone.
+
+clean_wide_events <- function(long_data = NULL) {
+  require(data.table)
+  require(purrr)
+
+  wide <- import_data("wide")
+  ev_cols <- c("derrame", "infarto", "insuficiencia", "otracor", "ht5", "pvivo")
+
+  # melt one variable's 7-column block into person x wave. Baseline is the
+  # unprefixed column, so waves run 0:6 and line up with clean_long()'s `wave`.
+  melt_block <- function(v) {
+    cols <- c(v, paste0("f", 1:6, v))
+    missing <- setdiff(cols, names(wide))
+    if (length(missing)) {
+      stop("wide file is missing ", paste(missing, collapse = ", "))
+    }
+    x <- wide[, c("codigo", ..cols)]
+    setnames(x, c("codigo", paste0("w", 0:6)))
+    # value.factor: melt returns character by default even when every source
+    # column is a factor with identical levels, which would make
+    # english_labels() skip the column and leave the Spanish "Si" in place
+    m <- melt(x, id.vars = "codigo", variable.name = "wave", value.name = v,
+              value.factor = TRUE)
+    m[, wave := as.integer(sub("w", "", wave))][]
+  }
+  wl <- reduce(map(ev_cols, melt_block),
+               \(a, b) merge(a, b, by = c("codigo", "wave")))
+  # the wide file keeps raw Stata labels; english_labels() only touches the
+  # columns it knows, so recode the block copies to the same No/Yes vocabulary
+  english_labels(wl)
+  setorder(wl, codigo, wave)
+
+  cvd_cols <- c("derrame", "infarto", "insuficiencia", "otracor")
+
+  # --- reversion: how often does a reported "Yes" become "No" again? ---
+  revert <- rbindlist(map(cvd_cols, \(v) {
+    z <- wl[!is.na(get(v)), .(codigo, wave, yes = get(v) == "Yes")]
+    s <- z[, .(ever  = any(yes),
+               prev  = any(yes[wave == 0]),
+               first = if (any(yes)) min(wave[yes]) else NA_integer_,
+               rev   = any(diff(as.integer(yes)) < 0)), by = codigo]
+    data.table(var = v, ever = sum(s$ever), prevalent = sum(s$prev),
+               first_after_w0 = sum(s$first > 0, na.rm = TRUE),
+               reverts = sum(s$rev, na.rm = TRUE))
+  }))
+
+  # --- dated strokes: the only corroborated CVD events in the trial ---
+  base_stroke <- wide[derrame == "Si" | derrame == "Yes",
+                      .(codigo, wave = 0L, years_since = as.character(derrame_a),
+                        confirmed = as.character(derramece))]
+  fu_stroke <- rbindlist(map(1:6, \(i) {
+    idx <- which(wide[[paste0("f", i, "derrame")]] %in% c("Si", "Yes"))
+    if (!length(idx)) return(NULL)
+    data.table(codigo      = wide$codigo[idx],
+               wave        = i,
+               event_month = wide[[paste0("f", i, "derramec_m")]][idx],
+               event_year  = wide[[paste0("f", i, "derramec_a")]][idx],
+               confirmed   = as.character(wide[[paste0("f", i, "derramece")]][idx]))
+  }))
+  # 2-digit year, all within the 2014-2017 trial window
+  if (nrow(fu_stroke)) {
+    fu_stroke[, event_date := as.Date(sprintf("%04d-%02d-01",
+                                              2000L + event_year, event_month))]
+  }
+  stroke <- list(prevalent = base_stroke, incident = fu_stroke)
+
+  # --- reconciliation against clean_long() ---
+  recon <- NULL
+  if (!is.null(long_data)) {
+    count_yes <- function(dt, src) {
+      rbindlist(map(intersect(c(cvd_cols, "ht5"), names(dt)), \(v)
+        data.table(source = src, var = v,
+                   n_yes = sum(dt[[v]] == "Yes", na.rm = TRUE))))
+    }
+    recon <- dcast(rbind(count_yes(wl, "wide"), count_yes(long_data, "long")),
+                   var ~ source, value.var = "n_yes")
+    recon[, match := wide == long]
+  }
+
+  list(long = wl, recon = recon, stroke = stroke, revert = revert)
 }
 
 # Function 3: Cleaning data in wide format, including assigning wave numbers and filling in missing waves

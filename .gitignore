@@ -14,8 +14,11 @@
 ## glob the contents, not the directory itself, so the negation below works
 data/*
 ## ...except public reference tables, which carry no participant data and are
-## a hard dependency of the model (see functs/globorisk_risk.R)
+## a hard dependency of the model. All three are rebuilt by
+## code/gbd_reference_data.R; see R/globorisk_risk.R and R/mortality.R.
 !data/gbd_ihd_stroke_peru.csv
+!data/gbd_mortality_peru.csv
+!data/gbd_reference_life_table.csv
 
 # PDF output until it is finished
 report/

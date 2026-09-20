@@ -22,7 +22,8 @@ Options:
   -n, --psa N        PSA draws (0 disables).            [default: 1000]
   -s, --seed N       RNG seed.                          [default: 42]
   -o, --no-owsa      Skip the one-way sensitivity pass.
-  -q, --quick        Smoke run: --psa 0 --no-owsa.
+  -q, --quick        Smoke run: --psa 0 --no-owsa --horizon trial.
+      --horizon H    trial | lifetime.                  [default: lifetime]
   -r, --render       Render salt_results.qmd after a successful model run.
       --threads N    BLAS/OpenMP threads.               [default: 1]
   -h, --help         Show this message.
@@ -36,6 +37,7 @@ EOF
 psa_n="${SALT_PSA_N:-1000}"
 seed="${SALT_SEED:-42}"
 owsa="${SALT_OWSA:-TRUE}"
+horizon="${SALT_HORIZON:-lifetime}"
 threads=1
 render=0
 
@@ -45,12 +47,20 @@ while [[ $# -gt 0 ]]; do
     -s|--seed)    seed="${2:?--seed needs a value}";  shift 2 ;;
     --threads)    threads="${2:?--threads needs a value}"; shift 2 ;;
     -o|--no-owsa) owsa=FALSE; shift ;;
-    -q|--quick)   psa_n=0; owsa=FALSE; shift ;;
+    --horizon)    horizon="${2:?--horizon needs a value}"; shift 2 ;;
+    # --quick also drops to the trial horizon: at ~197 cycles even a single
+    # base-case evaluation is no longer a few seconds.
+    -q|--quick)   psa_n=0; owsa=FALSE; horizon=trial; shift ;;
     -r|--render)  render=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     *)            echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+case "$horizon" in
+  trial|lifetime) ;;
+  *) echo "--horizon must be 'trial' or 'lifetime', got '$horizon'" >&2; exit 2 ;;
+esac
 
 for v in psa_n seed threads; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "--${v/_n/} must be a non-negative integer, got '${!v}'" >&2; exit 2; }
@@ -69,6 +79,7 @@ mkdir -p logs output
 export SALT_PSA_N="$psa_n"
 export SALT_OWSA="$owsa"
 export SALT_SEED="$seed"
+export SALT_HORIZON="$horizon"
 
 # Pin BLAS/OpenMP so results stay bit-comparable with the cluster run, where
 # simulate.sbatch pins the same four variables. The model is single-threaded;
@@ -85,7 +96,7 @@ log="logs/microsim-${stamp}.log"
   echo "started : $(date '+%F %T')"
   echo "root    : $ROOT"
   echo "R       : $(Rscript -e 'cat(R.version.string)')"
-  echo "config  : SALT_PSA_N=$psa_n  SALT_OWSA=$owsa  SALT_SEED=$seed  threads=$threads"
+  echo "config  : SALT_PSA_N=$psa_n  SALT_OWSA=$owsa  SALT_SEED=$seed  SALT_HORIZON=$horizon  threads=$threads"
   echo "log     : $log"
   echo "------------------------------------------------------------"
 } | tee "$log"

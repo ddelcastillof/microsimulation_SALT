@@ -10,9 +10,41 @@ print("Loading microsimulation parameters")
 # seed sets the RNG seed for reproducible microsimulation runs.
 # Cost and disability-weight values are placeholders to be replaced from
 # data/costs/costing_cleaned.xlsx and GBD reference values.
-get_params <- function(delta_sbp = 0, seed = 42) {
+get_params <- function(delta_sbp = 0, seed = 42,
+                       post_trial = c("continue", "stop")) {
+  post_trial <- match.arg(post_trial)
   list(
+    # n_t is the TOTAL number of cycles. It defaults to the trial's own 6 so
+    # that fixtures and the trial-horizon scenario need no extra setup; the
+    # lifetime horizon is opted into by passing the params list through
+    # set_horizon(), which can only be sized once the cohort is known.
     n_t          = 6L,                                   # number of cycles
+    # n_trial is the number of cycles the trial actually OBSERVED. Cycles
+    # beyond it are projected, and it is the seam the post-trial exposure
+    # scenario switches on. It never changes with the horizon.
+    n_trial      = 6L,
+    # Lifetime horizon cap: the cohort is followed until its youngest member
+    # reaches this age.
+    max_age      = 100,
+    # post_trial: what happens to exposure once the trial ends.
+    #   "continue" - base case; both arms keep their SBP gap and the
+    #                intervention keeps being paid for, for life
+    #   "stop"     - sensitivity scenario; the gap closes at the first
+    #                projected cycle and no further intervention cost accrues
+    # Both are expressed by one `treated` matrix in evaluate_model(), which is
+    # what keeps the effect and the cost switches from drifting apart.
+    post_trial   = post_trial,
+    # hr_postcvd: excess all-cause mortality hazard after a CVD event,
+    # applied to the age-sex background rate. The trial cannot estimate this
+    # (its CVD and PostCVD denominators are empty), so it comes from
+    # literature and carries a lognormal in the PSA.
+    hr_postcvd   = 1.75,
+    # mort_calib / cf_calib: multipliers on the GBD background mortality and
+    # case-fatality levels, on the cumulative-hazard scale. 1 = take GBD at
+    # face value. They exist so the PSA can carry the level uncertainty of an
+    # external data source, exactly as risk_calib does for Globorisk.
+    mort_calib   = 1,
+    cf_calib     = 1,
     # One cycle = one inter-visit interval. The trial measured blood pressure
     # every 5 months after baseline (Apr 2014 - Mar 2017), which the data
     # confirm: median gap between consecutive visits 0.419 yr (IQR 0.402-0.449),
@@ -59,4 +91,28 @@ get_params <- function(delta_sbp = 0, seed = 42) {
                         extrapolate = TRUE),
     seed         = as.integer(seed)
   )
+}
+
+# set_horizon: size the model's total cycle count for a lifetime horizon.
+#
+# n_t cannot be set in get_params() because it depends on the cohort: the model
+# runs until its YOUNGEST member reaches params$max_age, since every individual
+# shares one rectangular matrix of cycles. Older participants simply spend the
+# tail of the horizon in the Dead state, which accrues nothing.
+#
+# `long` is the cleaned long table; only its baseline (wave 0) ages are read.
+# The result is never shorter than the observed trial, so a low max_age
+# degrades to the trial horizon rather than producing a zero-width model.
+set_horizon <- function(params, long, max_age = params$max_age) {
+  require(data.table)
+  stopifnot(is.data.table(long), "age" %in% names(long))
+
+  youngest <- min(long[wave == 0, age], na.rm = TRUE)
+  n_t <- as.integer(ceiling((max_age - youngest) / params$cycle_length))
+  n_t <- max(n_t, params$n_trial)
+
+  params$n_t           <- n_t
+  params$max_age       <- max_age
+  params$horizon_years <- n_t * params$cycle_length
+  params
 }
