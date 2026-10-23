@@ -25,14 +25,20 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
 
   # --- Specification, from the dictionaries ---
 
-  # Survey process, identifiers, line numbers, consents and duplicates of the adult's
-  # own CSALUD01 answers. UBIGEO already holds the district, so the province and district
+  # Survey process, identifiers, line numbers, consents and duplicates of the adult's own CSALUD01 answers. 
+  # UBIGEO already holds the district, so the province and district
   # codes and everything below the district (populated centre, coordinates) go
   drop_cols <- c(
     # CSALUD01. QS212T repeats the QS212A-QS212O flags; QS407 was removed from the questionnaire
     "QHCLUSTER", "QHNUMBER", "QHHOME", "QSNUMERO", "QSINTM", "QSINTY", "QSTOTVISIT",
     "QSRESINF", "QS20C", "QSMEF", "QSDIA", "QS22M", "QS22A", "QS212T", "QS407", "QS704T",
     "QFIN", "QS8INICIO",
+    # CSALUD01 unit/quantity pairs the dictionary lists: time since the hypertension (QS103),
+    # diabetes (QS110) and cataract (QS305) diagnoses, and years smoking daily (QS204).
+    # The user examined them in the raw CSALUD01_2025.csv (2026-10-23) and found them
+    # empty by construction, so they are dropped and never reach the clean file.
+    # Re-check them if other survey years are pooled
+    "QS103U", "QS103C", "QS110U", "QS110C", "QS204U", "QS204C", "QS305U", "QS305C",
     # RECH0
     "HV000", "HV002", "HV002A", "HV003", "HV004", "HV007", "HV008", "HV017", "HV020",
     "HV021", "HV027", "HV028", "HV030", "HV031", "HV032", "HV033", "HV042", "HV043",
@@ -67,10 +73,9 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
       "QS603", "QS604", "QS606", "QS607", "QS608", "QS609", "QS610", "QS611", "QS707",
       "QS730",
       # CSALUD01 units of the unit/quantity pairs
-      "QS103U", "QS110U", "QS203U", "QS204U", "QS205U", "QS207U", "QS211U", "QS213U",
-      "QS214U", "QS215U", "QS216U", "QS217U", "QS218U", "QS219U", "QS220U", "QS302U",
-      "QS305U", "QS312U", "QS410U", "QS412U", "QS413B", "QS413E", "QS416U", "QS419A",
-      "QS501U",
+      "QS203U", "QS205U", "QS207U", "QS211U", "QS213U", "QS214U", "QS215U", "QS216U",
+      "QS217U", "QS218U", "QS219U", "QS220U", "QS302U", "QS312U", "QS410U", "QS412U",
+      "QS413B", "QS413E", "QS416U", "QS419A", "QS501U",
       # RECH1
       "HV106", "HV109", "HV111", "HV113", "HV122", "HV126", "HV129",
       # RECH4
@@ -113,12 +118,11 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
 
   # Unit/quantity pairs become one continuous variable each, so the synthesis cannot pair
   # a unit with a quantity from another unit. Lower-case names mark the derived columns
-  # Time since a diagnosis or test: unit 1 = months (under 2 years), 2 = years
+  # Time since a diagnosis or test: unit 1 = months (under 2 years), 2 = years.
+  # QS103, QS110 and QS305 are not here: the user examined them as empty columns in the
+  # raw file (see drop_cols)
   since_pairs <- list(
-    qs103_years  = c("QS103U", "QS103C"),   # hypertension diagnosis
-    qs110_years  = c("QS110U", "QS110C"),   # diabetes diagnosis
     qs302_years  = c("QS302U", "QS302C"),   # eye examination
-    qs305_years  = c("QS305U", "QS305C"),   # cataract diagnosis
     qs312_years  = c("QS312U", "QS312C"),   # dental care
     qs410_years  = c("QS410U", "QS410C"),   # breast examination
     qs412_years  = c("QS412U", "QS412C"),   # Papanicolaou
@@ -134,10 +138,10 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
     qs217_days = c("QS217U", "QS217C"), # fruit salad
     qs219_days = c("QS219U", "QS219C")  # vegetable salad
   )
-  # Unit 1 is the only valid unit; 8 (No sabe) is already NA
+  # Unit 1 is the only valid unit; 8 (No sabe) is already NA.
+  # QS204 is not here: the user examined it as an empty column in the raw file (see drop_cols)
   count_pairs <- list(
     qs203_age        = c("QS203U", "QS203C"), # age started smoking daily
-    qs204_years      = c("QS204U", "QS204C"), # years since started smoking daily
     qs205_cigarettes = c("QS205U", "QS205C"), # cigarettes a day
     qs207_age        = c("QS207U", "QS207C"), # age at first alcoholic drink
     qs211_times      = c("QS211U", "QS211C"), # times drank in the last 30 days
