@@ -314,4 +314,7 @@ building_endes <- function() {
   iwalk(endes_tables, \(dt, name) {
     arrow::write_parquet(dt, sink = file.path(endes_proc, paste0(name, ".parquet")))
   })
+
+  # The raw modules were only needed to build the tables; free their memory
+  rm(list = names(endes_keys), envir = globalenv())
 }
