@@ -179,6 +179,11 @@ building_endes <- function() {
   assert_covered(PS_HOGAR, RECH23, "HHID", "PS_HOGAR")
   assert_covered(RECHM, RECH23, "HHID", "RECHM")
   households <- RECH0[RECH23[, !"ID1"], on = "HHID"]
+  # UBIGEO is department (HV024), province (SHPROVIN) and district (SHDISTRI), two digits
+  # each. Rebuilt only to check INEI's code: cleaning_endes() keeps the three parts instead
+  stopifnot("UBIGEO is not HV024 + SHPROVIN + SHDISTRI" =
+              households[, all(UBIGEO == sprintf("%02d%02d%02d", HV024, SHPROVIN, SHDISTRI),
+                               na.rm = TRUE)])
   households <- merge(households, drop_shared(PS_HOGAR), by = "HHID", all.x = TRUE)
 
   # Household member: roster (RECH1), health insurance (RECH4), anaemia and anthropometry
