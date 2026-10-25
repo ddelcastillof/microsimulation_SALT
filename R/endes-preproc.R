@@ -6,8 +6,7 @@
 print("Importing functions to clean ENDES before synthetic data generation")
 
 # CSALUD01's selected adult + roster line + household, for all of Peru (Tumbes is filtered
-# after synthesis). Returns one row per eligible adult, continuous columns as double and
-# the rest as factor, and writes data/endes-clean/adults-clean.parquet
+# after synthesis). Returns one row per eligible adults. Writes data/endes-clean/adults-clean.parquet
 
 cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.parquet") |>
                              arrow::read_parquet()) {
@@ -21,7 +20,7 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
   # --- Specification, from the INEI dictionaries ---
 
   # Survey process, IDs, line numbers, consents, repeated columns and geography below the
-  # district (HV024, SHPROVIN and SHDISTRI keep the district)
+  # district (HV024, prov_key and SHDISTRI keep the district)
   drop_cols <- c(
     # Survey year: it counts the pooled years, then goes, since they are one population
     "ID1",
@@ -35,7 +34,9 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
     # Re-check when pooling years
     "QS103U", "QS103C", "QS110U", "QS110C", "QS204U", "QS204C", "QS305U", "QS305C",
     # RECH0. HV023 repeats HV024 (the user checked: identical). UBIGEO is HV024 + SHPROVIN +
-    # SHDISTRI, which building_endes() checks
+    # SHDISTRI, which building_endes() checks. PSU (HV001) and stratum (HV022) are sampling
+    # codes, not traits of a person, so they are not synthesised
+    "HV001", "HV022",
     "HV000", "HV002", "HV002A", "HV003", "HV004", "HV007", "HV008", "HV017", "HV020",
     "HV021", "HV023", "HV027", "HV028", "HV030", "HV031", "HV032", "HV033", "HV042",
     "HV043", "HV044", "NCONGLOME1", "CODCCPP", "NOMCCPP", "LONGITUDX", "LATITUDY", "UBIGEO",
@@ -47,8 +48,9 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
     # RECH5. HA1 repeats QS23; HA4-HA12B are child growth indices
     "HA1", "HA4", "HA5", "HA6", "HA11", "HA12", "HA12A", "HA12B", "HA32", "HA33", "HA50",
     "HA51", "HA52", "HA58", "HA61", "HA62", "HA63", "HA64", "HA65", "HA69",
-    # RECH23
-    "HV218", "SHVER", "SHSEMES", "QH227A",
+    # RECH23. Province codes repeat across departments, so SHPROVIN becomes prov_key
+    # (department + province), the group that SHDISTRI is synthesised within
+    "HV218", "SHVER", "SHSEMES", "QH227A", "SHPROVIN",
     # Programas Sociales x Hogar. QH97D/M/A (JUNTOS affiliation date) repeat QH96A/QH96M;
     # QH100B has no dictionary entry
     "QH96", "QH97D", "QH97M", "QH97A", "QHVIOLEN", "QH100B"
@@ -183,6 +185,10 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
   )
   ps_order <- paste0("PS", 1:8) # repeat the member's roster line
 
+  # Person and household weights. synthpop ignores weights, so they go last and are
+  # synthesised from everything else
+  weights <- c("Peso15_AMAS", "HV005")
+
   # Implied decimals, from the dictionary ranges. Weights as in checking_endes()
   scale_by <- list(
     `10`  = c("HA2", "HA3", "HA53", "HA56", "HA56A", "SH79"),
@@ -215,10 +221,6 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
                  QS905D = c(30, 150), QS900 = c(12, 300), QS901 = c(100, 250),
                  QS907 = c(55, 170))
 
-  # PSU, stratum, person and household weights. Numeric, because PSU and stratum as factors
-  # would carry up to 3,175 levels; generate_synth() leaves those two out
-  design_cols <- c("HV001", "HV022", "Peso15_AMAS", "HV005")
-
   # --- Scope: adult + household, no MEF modules ---
 
   # MEF columns: what women.parquet holds beyond persons.parquet. Schemas only, so `data`
@@ -228,19 +230,18 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
   adults <- as.data.table(data)[, setdiff(names(data), mef_cols), with = FALSE]
 
   # A misspelt dictionary name would otherwise be skipped silently
-  missing_cols <- c(drop_cols, unlist(na_codes), cont_cols, design_cols, unlist(all_pairs),
+  missing_cols <- c(drop_cols, unlist(na_codes), cont_cols, weights, unlist(all_pairs),
                     unlist(ps_members), qs220_cols, unlist(dk_lists), qs212_flags, "QS27",
-                    "QS902", "HA13", "HHID", "QSRESULT", "HV102", "SHPROVIN", "SHDISTRI") |>
+                    "QS902", "HA13", "HHID", "QSRESULT", "HV102", "HV024", "SHDISTRI") |>
     setdiff(c(derived, names(adults)))
   if (length(missing_cols) > 0) {
     stop("Dictionary variables missing from the data: ", toString(missing_cols))
   }
   stopifnot("A variable is both dropped and used after the drop" =
-              !any(drop_cols %in% c(unlist(na_codes), cont_cols, design_cols, unlist(all_pairs),
+              !any(drop_cols %in% c(unlist(na_codes), cont_cols, weights, unlist(all_pairs),
                                      qs220_cols, unlist(scale_by), unlist(dk_lists),
-                                     qs212_flags, "QS902", "HA13")),
-            "A variable is both continuous and a design column" =
-              !any(cont_cols %in% design_cols))
+                                     qs212_flags, "QS902", "HA13", "HV024", "SHDISTRI")),
+            "A variable is both continuous and a weight" = !any(cont_cols %in% weights))
 
   # --- Eligibility, as in checking_endes(): complete interview, 18+, usual resident ---
 
@@ -284,6 +285,10 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
 
   # Years living in Peru: a calendar year would change meaning across pooled years
   adults[, qh25c_years := ID1 - QH25CA]
+
+  # Department + province, two digits each, so each province has its own code
+  adults[, prov_key := fifelse(is.na(SHPROVIN), NA_character_,
+                               sprintf("%02d%02d", HV024, SHPROVIN))]
 
   adults[, c(drop_cols, ps_order, "QS27", "HHID") := NULL]
 
@@ -329,7 +334,7 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
     walk(cols, \(v) set(adults, j = v, value = adults[[v]] / as.numeric(k)))
   })
   # Each year's weights add up to the population, so pooled years share it (crosswalk §2)
-  walk(c("Peso15_AMAS", "HV005"), \(v) set(adults, j = v, value = adults[[v]] / n_years))
+  walk(weights, \(v) set(adults, j = v, value = adults[[v]] / n_years))
 
   # QS902 == 4: weighed in the household round, so weight and height are in RECH5, valid
   # when HA13 is 0 (measured) or 5 (partly measured). A no-op if INEI already copied them
@@ -345,8 +350,8 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
 
   # CART reads an integer code as ordered, so coded variables become factors whose levels
   # are the dictionary codes
-  walk(c(design_cols, cont_cols), \(v) set(adults, j = v, value = as.numeric(adults[[v]])))
-  walk(setdiff(names(adults), c(design_cols, cont_cols)), \(v) {
+  walk(c(weights, cont_cols), \(v) set(adults, j = v, value = as.numeric(adults[[v]])))
+  walk(setdiff(names(adults), c(weights, cont_cols)), \(v) {
     set(adults, j = v, value = factor(adults[[v]]))
   })
 
@@ -356,7 +361,10 @@ cleaning_endes <- function(data = here::here("data", "endes-proc", "compiled.par
   message("Constant or empty columns dropped: ", toString(constant_cols))
   adults[, (constant_cols) := NULL]
 
-  setcolorder(adults, intersect(design_cols, names(adults)))
+  # synthpop visits columns left to right. The weights and the nested geography go last:
+  # prov_key needs HV024 before it, SHDISTRI needs prov_key, and neither predicts the rest
+  last <- intersect(c(weights, "prov_key", "SHDISTRI"), names(adults))
+  setcolorder(adults, c(setdiff(names(adults), last), last))
   stopifnot("Columns left neither factor nor double" =
               all(map_lgl(adults, \(x) is.factor(x) || is.double(x))))
 
