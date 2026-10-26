@@ -23,9 +23,6 @@ report/
 # All output until it is finished
 output/
 
-# Run logs (run_local.sh and simulate.sbatch both write here)
-logs/
-
 # Formatting files
 assets/
 
