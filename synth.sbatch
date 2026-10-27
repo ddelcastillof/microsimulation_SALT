@@ -11,7 +11,7 @@
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=nodes
 #SBATCH --time=1-00:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
