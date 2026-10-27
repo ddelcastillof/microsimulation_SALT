@@ -9,7 +9,6 @@
 #SBATCH --account=none
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
-#SBATCH --partition=nodes
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=64G
 #SBATCH --nodes=1
