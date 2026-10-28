@@ -24,11 +24,13 @@ export MKL_NUM_THREADS=1
 
 echo "Job ${SLURM_JOB_ID} on $(hostname)"
 echo "R: $(which R) (R_HOME $(R RHOME))"; R --version | head -n 1
-Rscript -e '.libPaths()'
 
 cd "${SLURM_SUBMIT_DIR}"
 
-Rscript -e 'source("R/synth-generation.R")
+# Prepend the writable library after startup: Renviron/Rprofile files can override R_LIBS_USER
+Rscript -e 'lib <- "/mnt/home/dd198b/.R/4.6.1"; stopifnot(dir.exists(lib))
+.libPaths(c(lib, .libPaths())); print(.libPaths())
+source("R/synth-generation.R")
 generate_synth(arrow::read_parquet(here::here("data", "endes-clean", "adults-clean.parquet")),
                n = 24690000)'
 status=$?
