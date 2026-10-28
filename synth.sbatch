@@ -23,6 +23,7 @@ module load oneapi
 
 export MKL_INTERFACE_LAYER=GNU,LP64 MKL_THREADING_LAYER=GNU
 export LD_PRELOAD=$MKLROOT/lib/libmkl_rt.so
+export R_LIBS_USER = "/mnt/home/dd198b/.R/4.6.1"
 
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
