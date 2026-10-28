@@ -13,7 +13,10 @@ print("Importing synthetic data generation functions")
 
 generate_synth <- function(data, n, k = 5e5, out = here::here("data", "synth-endes")) {
   # require() only warns, so a missing package would surface after hours of fitting
-  stopifnot(require(synthpop), require(data.table), require(purrr), require(arrow))
+  stopifnot(require(synthpop, lib.loc = '/mnt/home/dd198b/.R/4.6.1'), 
+            require(data.table, lib.loc = '/mnt/home/dd198b/.R/4.6.1'), 
+            require(purrr, lib.loc = '/mnt/home/dd198b/.R/4.6.1'), 
+            require(arrow, lib.loc = '/mnt/home/dd198b/.R/4.6.1'))
   # The patch below, and .claude/synthpop-reference.md, describe this version's internals
   stopifnot("synthpop 1.9-3 expected" = packageVersion("synthpop") == "1.9.3")
   data <- as.data.table(data)
