@@ -27,6 +27,7 @@ export MKL_NUM_THREADS=1
 
 echo "Job ${SLURM_JOB_ID} on $(hostname)"
 echo "R: $(which R) (R_HOME $(R RHOME))"; R --version | head -n 1
+Rscript -e '.libPaths()'
 
 cd "${SLURM_SUBMIT_DIR}"
 
