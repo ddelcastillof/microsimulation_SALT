@@ -1,12 +1,8 @@
 #!/bin/bash
-#
-# Synthesise Peru's adult population from ENDES 2025 on SLURM: generate_synth() reads
-# data/endes-clean/adults-clean.parquet and writes data/synth-endes/part-*.parquet.
-# Run `mkdir -p logs` first: logs/ is gitignored and SLURM opens the log files before
-# this script starts
 
 #SBATCH --job-name=synth_endes
 #SBATCH --account=none
+#SBATCH --partition=cpu
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --time=1-00:00:00
@@ -14,13 +10,14 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --mail-user=darwin.delcastillofernandez@glasgow.ac.uk
 #SBATCH --mail-type=ALL
 
 module purge
 module load R/4.6.1
-
-export R_LIBS_USER="/mnt/home/dd198b/.R/4.6.1"
+export PATH="$PATH:/mnt/home/guid/software/R/bin"
+export R_LIBS_USER="/mnt/home/dd198b/.R/4.6.1/"
 
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
