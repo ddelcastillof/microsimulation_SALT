@@ -13,7 +13,7 @@ print("Importing synthetic data generation functions")
 
 generate_synth <- function(data, n, k = 5e5, out = here::here("data", "synth-endes")) {
   # require() only warns, so a missing package would surface after hours of fitting
-  stopifnot(require(synthpo), 
+  stopifnot(require(synthpop),
             require(data.table), 
             require(purrr), 
             require(arrow))
