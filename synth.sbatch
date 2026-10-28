@@ -18,18 +18,15 @@
 #SBATCH --mail-type=ALL
 
 module purge
-module load R
-module load oneapi
+module load R/4.6.1
 
-export MKL_INTERFACE_LAYER=GNU,LP64 MKL_THREADING_LAYER=GNU
-export LD_PRELOAD=$MKLROOT/lib/libmkl_rt.so
-export R_LIBS_USER = "/mnt/home/dd198b/.R/4.6.1"
+export R_LIBS_USER="/mnt/home/dd198b/.R/4.6.1"
 
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-export MKL_DOMAIN_NUM_THREADS=1
 
-echo "Job ${SLURM_JOB_ID} on $(hostname)"; R --version | head -n 1
+echo "Job ${SLURM_JOB_ID} on $(hostname)"
+echo "R: $(which R) (R_HOME $(R RHOME))"; R --version | head -n 1
 
 cd "${SLURM_SUBMIT_DIR}"
 
