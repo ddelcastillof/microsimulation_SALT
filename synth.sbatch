@@ -28,7 +28,7 @@ echo "R: $(which R) (R_HOME $(R RHOME))"; R --version | head -n 1
 cd "${SLURM_SUBMIT_DIR}"
 
 # Prepend the writable library after startup: Renviron/Rprofile files can override R_LIBS_USER
-Rscript -e 'lib <- "/mnt/home/dd198b/.R/4.6.1-gnu1150"; stopifnot(dir.exists(lib))
+Rscript -e 'lib <- "/mnt/home/dd198b/.R/4.6.1"; stopifnot(dir.exists(lib))
 .libPaths(c(lib, .libPaths())); print(.libPaths())
 source("R/synth-generation.R")
 generate_synth(arrow::read_parquet(here::here("data", "endes-clean", "adults-clean.parquet")),
