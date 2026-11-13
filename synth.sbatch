@@ -17,7 +17,7 @@
 module purge
 module load R/4.6.1
 export PATH="$PATH:/mnt/home/guid/software/R/bin"
-export R_LIBS_USER="/mnt/home/dd198b/.R/4.6.1-gnu1150"
+export R_LIBS_USER="/mnt/home/dd198b/.R/4.6.1"
 
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
